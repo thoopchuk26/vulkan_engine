@@ -45,6 +45,13 @@ struct GPUGLTFMaterial {
     glm::vec4 extra[14];
 };
 
+struct InstanceData{
+    glm::vec3 pos;
+    glm::vec3 rot;
+    float     scale;
+    uint32_t  texIndex;
+};
+
 static_assert(sizeof(GPUGLTFMaterial) == 256);
 
 struct GPUSceneData {

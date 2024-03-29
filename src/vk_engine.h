@@ -50,6 +50,12 @@ struct ComputePushConstants {
     glm::vec4 data4;
 };
 
+struct InstanceBuffer{
+    AllocatedBuffer buffer;
+    size_t size = 0;
+    VkDescriptorBufferInfo descriptor;
+};
+
 struct ComputeEffect {
     const char* name;
 
