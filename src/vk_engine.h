@@ -51,9 +51,10 @@ struct ComputePushConstants {
 };
 
 struct InstanceBuffer{
-    AllocatedBuffer buffer;
+    AllocatedBuffer instanceBuffer;
     size_t size = 0;
     VkDescriptorBufferInfo descriptor;
+    VkDeviceAddress instanceBufferAddress;
 };
 
 struct ComputeEffect {
@@ -69,6 +70,9 @@ struct RenderObject {
     uint32_t indexCount;
     uint32_t firstIndex;
     VkBuffer indexBuffer;
+
+    uint32_t instanceCount;
+    VkBuffer instanceBuffer;
 
     MaterialInstance* material;
     Bounds bounds;
@@ -253,6 +257,7 @@ public:
     void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 
     std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
+
     std::vector<std::shared_ptr<LoadedGLTF>> brickadiaScene;
 
     void destroy_image(const AllocatedImage& img);

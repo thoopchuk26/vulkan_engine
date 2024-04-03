@@ -70,7 +70,7 @@ void VulkanEngine::init()
     _isInitialized = true;
 
     mainCamera.velocity = glm::vec3(0.f);
-    mainCamera.position = glm::vec3(30.f, -00.f, -085.f);
+    mainCamera.position = glm::vec3(0.0f, 5.f, 0.0f);
 
     mainCamera.pitch = 0;
     mainCamera.yaw = 0;
@@ -276,7 +276,10 @@ void VulkanEngine::draw_main(VkCommandBuffer cmd)
     VkRenderingInfo renderInfo = vkinit::rendering_info(_windowExtent, &colorAttachment, &depthAttachment);
 
     vkCmdBeginRendering(cmd, &renderInfo);
+
+    //Timer used to measure frametime
     auto start = std::chrono::system_clock::now();
+
     draw_geometry(cmd);
 
     auto end = std::chrono::system_clock::now();
@@ -497,8 +500,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
                 lastPipeline = r.material->pipeline;
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->pipeline);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 0, 1,
-                    &globalDescriptor, 0, nullptr);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 0, 1, &globalDescriptor, 0, nullptr);
 
                 VkViewport viewport = {};
                 viewport.x = 0;
@@ -519,13 +521,14 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
                 vkCmdSetScissor(cmd, 0, 1, &scissor);
             }
 
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 1, 1,
-                &r.material->materialSet, 0, nullptr);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r.material->pipeline->layout, 1, 1, &r.material->materialSet, 0, nullptr);
         }
+
         if (r.indexBuffer != lastIndexBuffer) {
             lastIndexBuffer = r.indexBuffer;
             vkCmdBindIndexBuffer(cmd, r.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         }
+
         // calculate final mesh matrix
         GPUDrawPushConstants push_constants;
         push_constants.worldMatrix = r.transform;
@@ -535,6 +538,7 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
 
         stats.drawcall_count++;
         stats.triangle_count += r.indexCount / 3;
+
         vkCmdDrawIndexed(cmd, r.indexCount, 1, r.firstIndex, 0, 0);
         };
 
@@ -657,9 +661,11 @@ void VulkanEngine::update_scene()
     sceneData.viewproj = projection * view;
 
 
-    // for (int i = 0; i < 16; i++)         {
-    loadedScenes["structure"]->Draw(glm::mat4{ 1.f }, drawCommands);
-    //}
+    for (int x = 0; x < 16; x++) {
+        for (int z = 0; z < 16; z++) {
+            loadedScenes["block"]->Draw(glm::translate(glm::mat4(1.f),glm::vec3(x, 1.0f, z)), drawCommands);
+        }
+    }
 
 }
 
@@ -768,15 +774,12 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
 
     GPUMeshBuffers newSurface;
 
-    newSurface.vertexBuffer = create_buffer(vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY);
-
-
+    newSurface.vertexBuffer = create_buffer(vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,VMA_MEMORY_USAGE_GPU_ONLY);
     VkBufferDeviceAddressInfo deviceAdressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = newSurface.vertexBuffer.buffer };
     newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfo);
 
-    newSurface.indexBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        VMA_MEMORY_USAGE_GPU_ONLY);
+    newSurface.indexBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+   
 
     AllocatedBuffer staging = create_buffer(vertexBufferSize + indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
 
@@ -1091,6 +1094,16 @@ void VulkanEngine::init_renderables()
     assert(structureFile.has_value());
 
     loadedScenes["structure"] = *structureFile;
+
+    //initializing block data
+    //TODO: Make sure world generator generates proper data then send the data to loadGLTF
+
+    structurePath = { "..\\assets\\block.glb" };
+    structureFile = loadGltf(this, structurePath);
+
+    assert(structureFile.has_value());
+
+    loadedScenes["block"] = *structureFile;
 }
 
 void VulkanEngine::init_imgui()
@@ -1313,7 +1326,6 @@ MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, Materia
 
     matData.materialSet = descriptorAllocator.allocate(device, materialLayout);
 
-
     writer.clear();
     writer.write_buffer(0, resources.dataBuffer, sizeof(MaterialConstants), resources.dataBufferOffset, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
     writer.write_image(1, resources.colorImage.imageView, resources.colorSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -1323,6 +1335,7 @@ MaterialInstance GLTFMetallic_Roughness::write_material(VkDevice device, Materia
 
     return matData;
 }
+
 void MeshNode::Draw(const glm::mat4& topMatrix, DrawContext& ctx)
 {
     glm::mat4 nodeMatrix = topMatrix * worldTransform;
