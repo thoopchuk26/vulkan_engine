@@ -50,13 +50,6 @@ struct ComputePushConstants {
     glm::vec4 data4;
 };
 
-struct InstanceBuffer{
-    AllocatedBuffer instanceBuffer;
-    size_t size = 0;
-    VkDescriptorBufferInfo descriptor;
-    VkDeviceAddress instanceBufferAddress;
-};
-
 struct ComputeEffect {
     const char* name;
 
@@ -244,7 +237,7 @@ public:
 
     // upload a mesh into a pair of gpu buffers. If descriptor allocator is not
     // null, it will also create a descriptor that points to the vertex buffer
-    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices, std::span<InstanceData> instances);
 
     FrameData& get_current_frame();
     FrameData& get_last_frame();

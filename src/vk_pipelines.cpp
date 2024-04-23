@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include "vk_initializers.h"
+#include "VkBootstrap.h"
 
 //> pipe_clear
 void PipelineBuilder::clear()
@@ -36,7 +37,7 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device)
     viewportState.pNext = nullptr;
 
     viewportState.viewportCount = 1;
-    viewportState.scissorCount =1;
+    viewportState.scissorCount = 1;
 
     // setup dummy color blending. We arent using transparent objects yet
     // the blending is just "no blend", but we do write to the color attachment
@@ -51,8 +52,53 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device)
 
 
     //completely clear VertexInputStateCreateInfo, as we have no need for it
-    VkPipelineVertexInputStateCreateInfo _vertexInputInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+    //TODO: Fairly certain because we are putting instance data into a vertex buffer we do need to change our
+    // pipeline data for it to handle that even though we don't use the vertex pipeline for the actual vertex data 
+    VkPipelineVertexInputStateCreateInfo _vertexInputInfo = { };
+    _vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 
+    std::vector<VkVertexInputBindingDescription>   binding_descriptions;
+    std::vector<VkVertexInputAttributeDescription> attribute_descriptions;
+    
+    binding_descriptions = {
+        {                                               // Instance Data Binding
+            0,                                          // binding
+            sizeof(InstanceData),                       // stride
+            VK_VERTEX_INPUT_RATE_INSTANCE               // inputRate
+        }
+    };
+
+    attribute_descriptions = {
+        {                                               // Position
+            0,                                          // location
+            binding_descriptions[0].binding,            // binding
+            VK_FORMAT_R32G32B32_SFLOAT,                 // format
+            0                                           // offset
+        },
+        {                                               // Rotation
+            1,                                          // location
+            binding_descriptions[0].binding,            // binding
+            VK_FORMAT_R32G32B32_SFLOAT,                 // format
+            3 * sizeof(float)                           // offset
+        },
+        {                                               // Scale
+            2,                                          // location
+            binding_descriptions[0].binding,            // binding
+            VK_FORMAT_R32_SFLOAT,                       // format
+            6 * sizeof(float)                           // offset
+        },
+        {                                               // Texture Array Index
+            3,                                          // location
+            binding_descriptions[0].binding,            // binding
+            VK_FORMAT_R32_SINT,                         // format
+            7 * sizeof(float)                           // offset
+        }
+    };
+
+    _vertexInputInfo.vertexBindingDescriptionCount = binding_descriptions.size();
+    _vertexInputInfo.pVertexBindingDescriptions = binding_descriptions.data();
+    _vertexInputInfo.vertexAttributeDescriptionCount = attribute_descriptions.size();
+    _vertexInputInfo.pVertexAttributeDescriptions = attribute_descriptions.data();
 //< build_pipeline_1
 
 //> build_pipeline_2

@@ -46,10 +46,10 @@ struct GPUGLTFMaterial {
 };
 
 struct InstanceData{
-    glm::vec3 pos;
-    glm::vec3 rot;
-    float     scale;
-    uint32_t  texIndex;
+    glm::vec3 pos = {0.0f,0.0f,0.0f};
+    glm::vec3 rot = { 0.0f,0.0f,0.0f };
+    float     scale = 1.0f;
+    uint32_t  texIndex = 0;
 };
 
 static_assert(sizeof(GPUGLTFMaterial) == 256);
@@ -94,6 +94,7 @@ struct Vertex {
 struct GPUMeshBuffers {
 
     AllocatedBuffer indexBuffer;
+    AllocatedBuffer instanceBuffer;
     AllocatedBuffer vertexBuffer;
     VkDeviceAddress vertexBufferAddress;
 };

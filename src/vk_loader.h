@@ -24,6 +24,7 @@ struct GLTFMaterial {
 struct GeoSurface {
     uint32_t startIndex;
     uint32_t count;
+    uint32_t instanceCount;
     Bounds bounds;
     std::shared_ptr<GLTFMaterial> material;
 };
@@ -63,4 +64,4 @@ private:
     void clearAll();
 };
 
-std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::string_view filePath);
+std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::string_view filePath, std::vector<InstanceData> instances);

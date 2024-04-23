@@ -127,7 +127,7 @@ VkSamplerMipmapMode extract_mipmap_mode(fastgltf::Filter filter)
 }
 //< filters
 
-std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::string_view filePath)
+std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::string_view filePath, std::vector<InstanceData> instances)
 {
     //> load_1
     fmt::print("Loading GLTF: {}", filePath);
@@ -213,7 +213,6 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
         // load all textures
     for (fastgltf::Image& image : gltf.images) {
         std::optional<AllocatedImage> img = load_image(engine, gltf, image);
-
         if (img.has_value()) {
             images.push_back(*img);
             file.images[image.name.c_str()] = *img;
@@ -291,6 +290,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
         meshes.push_back(newmesh);
         file.meshes[mesh.name.c_str()] = newmesh;
         newmesh->name = mesh.name;
+        
 
         // clear the mesh arrays each mesh, we dont want to merge them by error
         indices.clear();
@@ -379,10 +379,12 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
             newSurface.bounds.origin = (maxpos + minpos) / 2.f;
             newSurface.bounds.extents = (maxpos - minpos) / 2.f;
             newSurface.bounds.sphereRadius = glm::length(newSurface.bounds.extents);
+            newSurface.instanceCount = instances.size();
             newmesh->surfaces.push_back(newSurface);
         }
 
-        newmesh->meshBuffers = engine->uploadMesh(indices, vertices);
+        newmesh->meshBuffers = engine->uploadMesh(indices, vertices, instances);
+        
     }
     //> load_nodes
         // load all nodes and their meshes
