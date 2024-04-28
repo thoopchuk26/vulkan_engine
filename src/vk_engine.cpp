@@ -20,6 +20,9 @@
 
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
+#include <iostream>
+
+#include "world_generator.h"
 
 constexpr bool bUseValidationLayers = true;
 
@@ -453,10 +456,12 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
     std::vector<uint32_t> opaque_draws;
     opaque_draws.reserve(drawCommands.OpaqueSurfaces.size());
 
+    //TODO: Fix culling so that if we cull one instance of an instanced render object, only that instance is culled instead of all instances of that render object
     for (int i = 0; i < drawCommands.OpaqueSurfaces.size(); i++) {
-        if (is_visible(drawCommands.OpaqueSurfaces[i], sceneData.viewproj)) {
+        /*if (is_visible(drawCommands.OpaqueSurfaces[i], sceneData.viewproj)) {
             opaque_draws.push_back(i);
-        }
+        }*/
+        opaque_draws.push_back(i);
     }
 
     // sort the opaque surfaces by material and mesh
@@ -472,7 +477,8 @@ void VulkanEngine::draw_geometry(VkCommandBuffer cmd)
         });
 
     //allocate a new uniform buffer for the scene data
-    AllocatedBuffer gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    AllocatedBuffer gpuSceneDataBuffer = create_buffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
     //add it to the deletion queue of this frame so it gets deleted once its been used
     get_current_frame()._deletionQueue.push_function([=, this]() {
@@ -658,7 +664,7 @@ void VulkanEngine::update_scene()
     glm::mat4 view = mainCamera.getViewMatrix();
 
     // camera projection
-    glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.1f);
+    glm::mat4 projection = glm::perspective(glm::radians(70.f), (float)_drawExtent.width / (float)_drawExtent.height, 10000.f, 0.001f);
 
     // invert the Y direction on projection matrix so that we are more similar
     // to opengl and gltf axis
@@ -672,24 +678,22 @@ void VulkanEngine::update_scene()
 
 }
 
-AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
+AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaVirtualAllocationCreateFlags memoryFlags)
 {
     // allocate buffer
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.pNext = nullptr;
     bufferInfo.size = allocSize;
-
     bufferInfo.usage = usage;
 
     VmaAllocationCreateInfo vmaallocInfo = {};
-    vmaallocInfo.usage = memoryUsage;
-    vmaallocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    vmaallocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+    vmaallocInfo.flags = memoryFlags;
+    
     AllocatedBuffer newBuffer;
-
     // allocate the buffer
-    VK_CHECK(vmaCreateBuffer(_allocator, &bufferInfo, &vmaallocInfo, &newBuffer.buffer, &newBuffer.allocation,
-        &newBuffer.info));
+    VK_CHECK(vmaCreateBuffer(_allocator, &bufferInfo, &vmaallocInfo, &newBuffer.buffer, &newBuffer.allocation, &newBuffer.info));
 
     return newBuffer;
 }
@@ -707,7 +711,7 @@ AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkIm
 
     // always allocate images on dedicated GPU memory
     VmaAllocationCreateInfo allocinfo = {};
-    allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    allocinfo.usage = VMA_MEMORY_USAGE_AUTO;
     allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     // allocate and create the image
@@ -733,7 +737,7 @@ AllocatedImage VulkanEngine::create_image(VkExtent3D size, VkFormat format, VkIm
 AllocatedImage VulkanEngine::create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped)
 {
     size_t data_size = size.depth * size.width * size.height * 4;
-    AllocatedBuffer uploadbuffer = create_buffer(data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    AllocatedBuffer uploadbuffer = create_buffer(data_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
     memcpy(uploadbuffer.info.pMappedData, data, data_size);
 
@@ -754,8 +758,7 @@ AllocatedImage VulkanEngine::create_image(void* data, VkExtent3D size, VkFormat 
         copyRegion.imageExtent = size;
 
         // copy the buffer into the image
-        vkCmdCopyBufferToImage(cmd, uploadbuffer.buffer, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-            &copyRegion);
+        vkCmdCopyBufferToImage(cmd, uploadbuffer.buffer, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
         if (mipmapped) {
             vkutil::generate_mipmaps(cmd, new_image.image, VkExtent2D{ new_image.imageExtent.width,new_image.imageExtent.height });
@@ -769,23 +772,24 @@ AllocatedImage VulkanEngine::create_image(void* data, VkExtent3D size, VkFormat 
 }
 //< create_mip_2
 
-GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices, std::span<InstanceData> instances)
+GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices, AllocatedBuffer instanceBuffer)
 {
     const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
     const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
-    const size_t instanceBufferSize = instances.size() * sizeof(InstanceData);
 
     GPUMeshBuffers newSurface;
 
-    newSurface.vertexBuffer = create_buffer(vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_AUTO);
+    newSurface.vertexBuffer = create_buffer(vertexBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, 
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
     VkBufferDeviceAddressInfo deviceAdressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,.buffer = newSurface.vertexBuffer.buffer };
     newSurface.vertexBufferAddress = vkGetBufferDeviceAddress(_device, &deviceAdressInfo);
 
-    newSurface.indexBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO);
+    newSurface.indexBuffer = create_buffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, 
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
-    newSurface.instanceBuffer = create_buffer(instanceBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_AUTO);
+    newSurface.instanceBuffer = instanceBuffer;
 
-    AllocatedBuffer staging = create_buffer(vertexBufferSize + indexBufferSize * instanceBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO);
+    AllocatedBuffer staging = create_buffer(vertexBufferSize + indexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
     void* data = staging.allocation->GetMappedData();
 
@@ -793,8 +797,6 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
     memcpy(data, vertices.data(), vertexBufferSize);
     // copy index buffer
     memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
-
-    memcpy((char*)data + vertexBufferSize + indexBufferSize, instances.data(), instanceBufferSize);
 
     immediate_submit([&](VkCommandBuffer cmd) {
         VkBufferCopy vertexCopy{ 0 };
@@ -810,18 +812,40 @@ GPUMeshBuffers VulkanEngine::uploadMesh(std::span<uint32_t> indices, std::span<V
         indexCopy.size = indexBufferSize;
 
         vkCmdCopyBuffer(cmd, staging.buffer, newSurface.indexBuffer.buffer, 1, &indexCopy);
-
-        VkBufferCopy instanceCopy{ 0 };
-        instanceCopy.dstOffset = 0;
-        instanceCopy.srcOffset = indexBufferSize + vertexBufferSize;
-        instanceCopy.size = instanceBufferSize;
-
-        vkCmdCopyBuffer(cmd, staging.buffer, newSurface.instanceBuffer.buffer, 1, &instanceCopy);
         });
 
     destroy_buffer(staging);
 
     return newSurface;
+}
+
+AllocatedBuffer VulkanEngine::uploadInstances(std::span<InstanceData> instances)
+{
+    const size_t instanceBufferSize = instances.size() * sizeof(InstanceData);
+
+    AllocatedBuffer instanceBuffer;
+
+    instanceBuffer = create_buffer(instanceBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+    AllocatedBuffer staging = create_buffer(instanceBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+
+    void* data = staging.allocation->GetMappedData();
+
+    memcpy((char*)data, instances.data(), instanceBufferSize);
+
+    immediate_submit([&](VkCommandBuffer cmd) {
+        VkBufferCopy instanceCopy{ 0 };
+        instanceCopy.dstOffset = 0;
+        instanceCopy.srcOffset = 0;
+        instanceCopy.size = instanceBufferSize;
+
+        vkCmdCopyBuffer(cmd, staging.buffer, instanceBuffer.buffer, 1, &instanceCopy);
+        });
+
+    destroy_buffer(staging);
+
+    return instanceBuffer;
 }
 
 FrameData& VulkanEngine::get_current_frame()
@@ -1101,30 +1125,23 @@ void VulkanEngine::init_sync_structures()
 
 void VulkanEngine::init_renderables()
 {
-    /*std::string structurePath = { "..\\assets\\structure.glb" };
-    auto structureFile = loadGltf(this, structurePath, {InstanceData()});
+    std::string structurePath = { "..\\assets\\structure.glb" };
+    /*auto structureFile = loadGltf(this, structurePath, {InstanceData()});
 
     assert(structureFile.has_value());
 
     loadedScenes["structure"] = *structureFile;*/
 
     //initializing block data
-    //TODO: Make sure world generator generates proper data then send the data to loadGLTF
-    std::vector<InstanceData> instances;
-    InstanceData instance;
-    for (int x = 0; x < 1000; x++) {
-        for (int z = 0; z < 1000; z++) {
-            instance.pos = { x,0.0f,z };
-            instances.push_back(instance);
-        }
-    }
+    worldGenerator gen;
+    gen.generate_world();
 
-    std::string structurePath = { "..\\assets\\block.glb" };
-    auto structureFile = loadGltf(this, structurePath, instances);
+    std::string structurePath2 = { "..\\assets\\block.glb" };
+    auto structureFile2 = loadGltf(this, structurePath2, gen.positions);
 
-    assert(structureFile.has_value());
+    assert(structureFile2.has_value());
 
-    loadedScenes["block"] = *structureFile;
+    loadedScenes["block"] = *structureFile2;
 }
 
 void VulkanEngine::init_imgui()
@@ -1205,7 +1222,7 @@ void VulkanEngine::init_descriptors()
     std::vector<DescriptorAllocator::PoolSizeRatio> sizes = {
         { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3 },
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 },
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
     };
 
     globalDescriptorAllocator.init_pool(_device, 10, sizes);
@@ -1234,6 +1251,7 @@ void VulkanEngine::init_descriptors()
         writer.write_image(0, _drawImage.imageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         writer.update_set(_device, _drawImageDescriptors);
     }
+
     for (int i = 0; i < FRAME_OVERLAP; i++) {
         // create a descriptor pool
         std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> frame_sizes = {
@@ -1298,8 +1316,8 @@ void GLTFMetallic_Roughness::build_pipelines(VulkanEngine* engine)
 
     pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
-    //pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
-    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_LINE);
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    //pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_LINE);
 
     pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
 

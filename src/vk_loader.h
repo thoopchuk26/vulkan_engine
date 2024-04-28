@@ -52,6 +52,7 @@ struct LoadedGLTF : public IRenderable {
     DescriptorAllocatorGrowable descriptorPool;
 
     AllocatedBuffer materialDataBuffer;
+    //AllocatedBuffer instanceDataBuffer;
 
     VulkanEngine* creator;
 

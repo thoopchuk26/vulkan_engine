@@ -50,10 +50,7 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device)
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &_colorBlendAttachment;
 
-
-    //completely clear VertexInputStateCreateInfo, as we have no need for it
-    //TODO: Fairly certain because we are putting instance data into a vertex buffer we do need to change our
-    // pipeline data for it to handle that even though we don't use the vertex pipeline for the actual vertex data 
+    //Setup vertex pipeline so it can handle our instance data
     VkPipelineVertexInputStateCreateInfo _vertexInputInfo = { };
     _vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 

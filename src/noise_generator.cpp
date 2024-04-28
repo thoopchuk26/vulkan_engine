@@ -13,7 +13,7 @@ void noiseGenerator::init_permuation()
 
 	auto old_count = permutations.size();
 	permutations.reserve(2 * old_count);
-	std::copy_n(permutations.begin(), old_count, permutations.begin() + old_count);
+	std::copy_n(permutations.begin(), old_count, std::back_inserter(permutations));
 }
 
 float noiseGenerator::perlin_noise3D(float x, float y, float z)

@@ -237,12 +237,13 @@ public:
 
     // upload a mesh into a pair of gpu buffers. If descriptor allocator is not
     // null, it will also create a descriptor that points to the vertex buffer
-    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices, std::span<InstanceData> instances);
+    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices, AllocatedBuffer instanceBuffer);
+    AllocatedBuffer uploadInstances(std::span<InstanceData> instances);
 
     FrameData& get_current_frame();
     FrameData& get_last_frame();
 
-    AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+    AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaVirtualAllocationCreateFlags memoryFlags);
 
     AllocatedImage create_image(VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);
     AllocatedImage create_image(void* data, VkExtent3D size, VkFormat format, VkImageUsageFlags usage, bool mipmapped = false);

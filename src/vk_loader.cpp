@@ -175,8 +175,9 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
     }
     //< load_1
     //> load_2
-        // we can stimate the descriptors we will need accurately
-    std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = { { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 },
+        // we can estimate the descriptors we will need accurately
+    std::vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = { 
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 },
         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 } };
 
@@ -227,8 +228,8 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
 
     //> load_buffer
         // create buffer to hold the material data
-    file.materialDataBuffer = engine->create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants) * gltf.materials.size(),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    file.materialDataBuffer = engine->create_buffer(sizeof(GLTFMetallic_Roughness::MaterialConstants) * gltf.materials.size(), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
     int data_index = 0;
     GLTFMetallic_Roughness::MaterialConstants* sceneMaterialConstants = (GLTFMetallic_Roughness::MaterialConstants*)file.materialDataBuffer.info.pMappedData;
     //< load_buffer
@@ -284,6 +285,9 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
         // often
     std::vector<uint32_t> indices;
     std::vector<Vertex> vertices;
+
+    //Create instance buffer here so we only allocate one buffer for the data, and then pass the buffer to our meshbuffers so it can still access the data
+    AllocatedBuffer instanceBuffer = engine->uploadInstances(instances);
 
     for (fastgltf::Mesh& mesh : gltf.meshes) {
         std::shared_ptr<MeshAsset> newmesh = std::make_shared<MeshAsset>();
@@ -383,8 +387,7 @@ std::optional<std::shared_ptr<LoadedGLTF>> loadGltf(VulkanEngine* engine, std::s
             newmesh->surfaces.push_back(newSurface);
         }
 
-        newmesh->meshBuffers = engine->uploadMesh(indices, vertices, instances);
-        
+        newmesh->meshBuffers = engine->uploadMesh(indices, vertices, instanceBuffer);
     }
     //> load_nodes
         // load all nodes and their meshes
@@ -461,6 +464,7 @@ void LoadedGLTF::clearAll()
 
         creator->destroy_buffer(v->meshBuffers.indexBuffer);
         creator->destroy_buffer(v->meshBuffers.vertexBuffer);
+        creator->destroy_buffer(v->meshBuffers.instanceBuffer);
     }
 
     for (auto& [k, v] : images) {
